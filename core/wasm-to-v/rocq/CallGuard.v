@@ -53,7 +53,7 @@ Ltac prove_prefix :=
         |apply guard_block; prove_prefix
         |apply guard_step; [reflexivity | prove_prefix]].
 
-Ltac prove_call_guard :=
+Local Ltac construct_call_guard :=
   unfold has_call_guard; do 4 eexists;
   split; [find_member |];
   split; [find_member |];
@@ -61,3 +61,7 @@ Ltac prove_call_guard :=
   split; [vm_compute; repeat constructor |];
   split; [reflexivity |];
   split; [do 2 eexists; split; reflexivity | prove_prefix].
+
+Ltac prove_call_guard :=
+  first [solve [construct_call_guard]
+        | fail 1 "Cannot certify a direct call guard on the requested argument in this export"].
