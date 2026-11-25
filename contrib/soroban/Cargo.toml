@@ -1,0 +1,17 @@
+[workspace]
+
+[package]
+name = "infs-soroban"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+publish = false
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+soroban-sdk = { version = "=29.0.1", features = ["testutils"] }
+soroban-spec = "=29.0.1"
+tempfile = "3"
+wasmi = { package = "soroban-wasmi", version = "=0.31.1-soroban.29.0.0" }

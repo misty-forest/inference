@@ -80,3 +80,6 @@ editors/vscode/dist/
 # mdBook render output
 /book/book/
 /scratch
+
+# The standalone Soroban runner pins its executable dependencies.
+!/contrib/soroban/Cargo.lock
