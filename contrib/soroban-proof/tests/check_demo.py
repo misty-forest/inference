@@ -1,6 +1,7 @@
 """Run the public example and recompile a one-input Rust mutation in a temporary directory."""
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -41,6 +42,7 @@ def check(demo):
                 "out",
             ],
             cwd=root,
+            env={**os.environ, "CARGO_TARGET_DIR": str(root / "target")},
             check=True,
         )
         result = subprocess.run(
