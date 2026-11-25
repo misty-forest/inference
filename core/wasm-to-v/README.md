@@ -680,3 +680,31 @@ See the main project [CONTRIBUTING.md](../../CONTRIBUTING.md) guide.
 ## License
 
 This crate is part of the Inference compiler project. See the repository root for license information.
+
+### Apply a specification to an existing Wasm export
+
+In a proof build, `--proof-subject NAME` resolves applications of a bound
+external declaration by the module's export table. The Rocq file contains the
+supplied executable, its imports and the sidecar's universal obligations.
+`infc` checks the declared ABI signature during external resolution. Naming a
+host import in the executable supplies no semantics for that import.
+
+```sh
+infc spec.inf --mode proof --proof-subject locker --wasm-dep locker=locker.wasm
+```
+
+### Certify a direct Soroban authorization guard
+
+```sh
+infc locker.wasm --soroban-auth create_lock:owner --out-dir out
+coqc out/OwnerAuth.v
+```
+
+This path needs Coq 8.20 and public WasmCert v2.2.0. The compiler resolves the
+named Address argument from Soroban XDR. Rocq checks a structural theorem
+over the export's translated WasmCert body. Its prefix must reach
+`local.get <original argument>; call <a.0>` before returning, with conditional
+exits in the recognized prefix leading to `unreachable`. The certificate
+also checks the import, the argument slot and their types. Its tactic can
+reject equivalent code shapes it does not recognize. Host authorization
+semantics, reentrant effects, balances and storage require separate theorems.

@@ -17,6 +17,9 @@ inference-compiler-interface.workspace = true
 inference-stellar-abi.workspace = true
 inference-target-conformance.workspace = true
 
+wasmparser.workspace = true
+stellar-xdr = "28"
+
 [dev-dependencies]
 assert_cmd = "2.1.1"
 predicates = "3.1.3"

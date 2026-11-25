@@ -2403,7 +2403,9 @@ dependencies = [
  "inference-target-conformance",
  "inference-wasm-codegen",
  "predicates",
+ "stellar-xdr",
  "walkdir",
+ "wasmparser 0.254.0",
  "wasmprinter",
  "wat",
 ]

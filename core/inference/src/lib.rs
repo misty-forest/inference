@@ -410,6 +410,9 @@ pub use inference_wasm_linker::{
 /// [`wasm_to_v`] can construct the argument (empty post-link, populated for the
 /// pre-link cross-check) without depending on `inference-hassert` directly.
 pub use inference_wasm_codegen::HSpecMap;
+pub use inference_wasm_to_v_translator::wasm_parser::{
+    translate_proof_subject, translate_subject_module,
+};
 
 /// Runs `f` on a thread reserving [`inference_parser::MIN_COMPILE_STACK`].
 ///

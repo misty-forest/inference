@@ -259,6 +259,16 @@ pub(crate) struct Cli {
     #[clap(long = "wasm-dep", value_name = "NAME=PATH")]
     pub(crate) wasm_deps: Vec<String>,
 
+    /// Apply the sidecar's universal specs to the original exports of this Wasm dependency.
+    /// Writes Rocq obligations only. Host imports remain in the subject module.
+    #[clap(long, value_name = "NAME", conflicts_with_all = ["generate_wasm_output", "adopt_external_specs", "host_imports", "wasm_features", "import_memory", "stack_size", "memory_pages", "max_memory_pages", "bounds_checks"])]
+    pub(crate) proof_subject: Option<String>,
+
+    /// Generate a Rocq certificate goal for a Soroban export's direct `require_auth` guard.
+    /// Reads the named Address parameter from the input contract's contractspecv0.
+    #[clap(long, value_name = "EXPORT:PARAM", conflicts_with_all = ["proof_subject", "parse", "analyze", "codegen", "generate_wasm_output", "adopt_external_specs", "wasm_deps", "wasm_lib_dirs", "host_imports", "target", "wasm_features", "import_memory", "stack_size", "memory_pages", "max_memory_pages", "bounds_checks"])]
+    pub(crate) soroban_auth: Option<String>,
+
     /// The host functions this build may bind, as comma-separated
     /// `<module>.<field>` entries; the `=` is required.
     ///

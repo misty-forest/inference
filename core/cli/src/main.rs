@@ -184,6 +184,7 @@
 //! See `README.md` in this crate for comprehensive usage documentation.
 
 mod parser;
+mod soroban_auth;
 pub(crate) mod toolchain;
 use clap::Parser;
 use inference::wasm_link::{
@@ -1549,6 +1550,17 @@ fn run() {
         process::exit(1);
     }
 
+    if let Some(request) = &args.soroban_auth {
+        if matches!(args.mode, Some(CliMode::Compile)) {
+            eprintln!("--soroban-auth requires proof mode");
+            process::exit(1);
+        }
+        if let Err(err) = soroban_auth::generate(&path, request, args.out_dir.as_deref()) {
+            eprintln!("Soroban proof generation failed: {err}");
+            process::exit(1);
+        }
+        return;
+    }
     normalize_args(&mut args);
 
     // Refuse a proof-only request against a compile-mode build here, where the
@@ -1589,6 +1601,14 @@ fn run() {
         }
     };
     let target = emission_target(target_name);
+    if args.proof_subject.is_some()
+        && (!args.codegen
+            || !matches!(args.mode, Some(CliMode::Proof))
+            || target != inference_wasm_codegen::Target::Wasm32)
+    {
+        eprintln!("--proof-subject requires a wasm32 proof build (--mode proof)");
+        process::exit(1);
+    }
 
     // Resolve the bounds-check policy for the same reason and at the same point:
     // a misspelled policy is a mistake about the artifact.
@@ -1952,6 +1972,35 @@ fn run() {
         };
         println!("Codegen complete");
 
+        if let Some(subject) = &args.proof_subject {
+            let [module] = external_modules.as_slice() else {
+                eprintln!("--proof-subject needs exactly one bound Wasm module");
+                process::exit(1);
+            };
+            if module.logical_module != *subject {
+                eprintln!("--proof-subject must name the sidecar's bound Wasm module");
+                process::exit(1);
+            }
+            let result = inference::translate_proof_subject(
+                source_fname,
+                subject,
+                &module.bytes,
+                codegen_output.hspecs(),
+            )
+            .and_then(|obligations| {
+                fs::create_dir_all(&output_path)?;
+                let path = output_path.join(format!("{source_fname}.v"));
+                fs::write(&path, obligations)?;
+                println!("Rocq obligations generated at {}", path.display());
+                Ok(())
+            });
+            if let Err(e) = result {
+                eprintln!("Proof subject translation failed: {e}");
+                process::exit(1);
+            }
+            return;
+        }
+
         // Held to the target's instruction set one file at a time, while each
         // artifact is still its own file and a refusal can say which one it is
         // about. After the merge there is only one module.
@@ -2194,6 +2243,8 @@ mod tests {
             mode: None,
             wasm_lib_dirs: Vec::new(),
             wasm_deps: Vec::new(),
+            proof_subject: None,
+            soroban_auth: None,
             host_imports: None,
             target: None,
             wasm_features: Vec::new(),
