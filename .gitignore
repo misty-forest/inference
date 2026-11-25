@@ -80,3 +80,9 @@ editors/vscode/dist/
 # mdBook render output
 /book/book/
 /scratch
+
+# Standalone Python proof backend
+/contrib/soroban-proof/**/__pycache__/
+/contrib/soroban-proof/*.egg-info/
+/contrib/soroban-proof/build/
+/contrib/soroban-proof/dist/
