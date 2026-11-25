@@ -1,0 +1,12 @@
+{
+  "source": "transfer.inf",
+  "ledger_time": 1000,
+  "accounts": ["alice", "bob", "admin"],
+  "assets": [{"name": "token", "admin": "admin", "balances": {"alice": 40}}],
+  "contracts": [],
+  "grants": [{
+    "name": "payment", "signer": "alice", "params": ["amount"],
+    "root": {"call": ["token", "transfer", "alice", "bob", "$amount"]}
+  }],
+  "runs": [{"entry": "transfer_balance", "args": [40]}]
+}

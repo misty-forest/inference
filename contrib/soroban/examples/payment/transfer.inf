@@ -1,0 +1,16 @@
+pub fn transfer_balance(amount: u64) {
+    let from: Address = alice();
+    let to: Address = bob();
+    let balance: SorobanI128 = token_balance(from);
+    assert(i128_to_u64(balance) == amount);
+
+    clear_auth();
+    assert(token_rejects_transfer(from, to, balance));
+
+    authorize_payment(amount);
+    token_transfer(from, to, balance);
+    assert(auth_matched());
+
+    let received: SorobanI128 = token_balance(to);
+    assert(i128_to_u64(received) == amount);
+}
