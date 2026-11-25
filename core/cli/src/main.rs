@@ -184,7 +184,6 @@
 //! See `README.md` in this crate for comprehensive usage documentation.
 
 mod parser;
-mod soroban_auth;
 pub(crate) mod toolchain;
 use clap::Parser;
 use inference::wasm_link::{
@@ -1550,16 +1549,25 @@ fn run() {
         process::exit(1);
     }
 
-    if let Some(request) = &args.soroban_auth {
-        if matches!(args.mode, Some(CliMode::Compile)) {
-            eprintln!("--soroban-auth requires proof mode");
+    if let Some(subject) = args.proof_subject.as_deref().filter(|s| {
+        Path::new(s)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("wasm"))
+    }) {
+        let Some(name) = Path::new(subject).file_stem().and_then(|s| s.to_str()) else {
+            eprintln!("--proof-subject needs a named Wasm file");
+            process::exit(1);
+        };
+        if args
+            .wasm_deps
+            .iter()
+            .any(|dep| dep.split_once('=').is_some_and(|(key, _)| key == name))
+        {
+            eprintln!("duplicate binding for proof subject {name}");
             process::exit(1);
         }
-        if let Err(err) = soroban_auth::generate(&path, request, args.out_dir.as_deref()) {
-            eprintln!("Soroban proof generation failed: {err}");
-            process::exit(1);
-        }
-        return;
+        args.wasm_deps.push(format!("{name}={subject}"));
+        args.proof_subject = Some(name.to_owned());
     }
     normalize_args(&mut args);
 
@@ -1719,7 +1727,12 @@ fn run() {
     // `-v` — must not disturb a previous build's artifacts, so clearing is gated
     // on this run actually emitting something.
     if need_codegen && (args.generate_wasm_output || args.generate_v_output) {
-        clear_stale_outputs(&output_path, &source_fname);
+        if args.proof_subject.is_some() {
+            // The Wasm may be the input contract itself, alongside the sidecar.
+            let _ = fs::remove_file(output_path.join(format!("{source_fname}.v")));
+        } else {
+            clear_stale_outputs(&output_path, &source_fname);
+        }
     }
 
     // Refuse a `.v` for a source file name that is not UTF-8 before any phase
@@ -1753,10 +1766,22 @@ fn run() {
         }
     }
 
-    let Some(arena) = t_ast else {
+    let Some(mut arena) = t_ast else {
         eprintln!("Internal error: parse phase did not produce AST");
         process::exit(1);
     };
+
+    // Carry proof clauses to the foreign-module backend. Ordinary codegen
+    // rejects an unconsumed clause so no compiler entry point can drop it.
+    let mut auth = Vec::new();
+    if need_codegen && args.proof_subject.is_some() {
+        for clause in std::mem::take(&mut arena.auth_requirements) {
+            auth.push((
+                arena[clause.export].name.clone(),
+                arena[clause.parameter].name.clone(),
+            ));
+        }
+    }
 
     let mut typed_context = None;
     // The array accesses the analysis proved in bounds, whose runtime guard
@@ -1973,29 +1998,46 @@ fn run() {
         println!("Codegen complete");
 
         if let Some(subject) = &args.proof_subject {
-            let [module] = external_modules.as_slice() else {
-                eprintln!("--proof-subject needs exactly one bound Wasm module");
-                process::exit(1);
-            };
-            if module.logical_module != *subject {
-                eprintln!("--proof-subject must name the sidecar's bound Wasm module");
-                process::exit(1);
-            }
-            let result = inference::translate_proof_subject(
-                source_fname,
-                subject,
-                &module.bytes,
-                codegen_output.hspecs(),
-            )
+            let result = (|| -> anyhow::Result<String> {
+                let bytes = match external_modules.as_slice() {
+                    [module] if module.logical_module == *subject => {
+                        std::borrow::Cow::Borrowed(module.bytes.as_slice())
+                    }
+                    [] if !auth.is_empty() => {
+                        let path = manifest_deps.get(subject).ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "bind proof subject `{subject}` with --wasm-dep {subject}=PATH"
+                            )
+                        })?;
+                        std::borrow::Cow::Owned(fs::read(path)?)
+                    }
+                    _ => anyhow::bail!(
+                        "--proof-subject must name the sidecar's single bound Wasm module"
+                    ),
+                };
+                inference::translate_proof_subject(
+                    source_fname,
+                    subject,
+                    &bytes,
+                    codegen_output.hspecs(),
+                    &auth,
+                )
+            })()
             .and_then(|obligations| {
                 fs::create_dir_all(&output_path)?;
                 let path = output_path.join(format!("{source_fname}.v"));
                 fs::write(&path, obligations)?;
                 println!("Rocq obligations generated at {}", path.display());
+                for (i, (export, parameter)) in auth.iter().enumerate() {
+                    println!(
+                        "OPEN obligation_{}: {export} requires auth({parameter})",
+                        i + 1
+                    );
+                }
                 Ok(())
             });
             if let Err(e) = result {
-                eprintln!("Proof subject translation failed: {e}");
+                eprintln!("Proof subject translation failed: {e:#}");
                 process::exit(1);
             }
             return;
@@ -2244,7 +2286,6 @@ mod tests {
             wasm_lib_dirs: Vec::new(),
             wasm_deps: Vec::new(),
             proof_subject: None,
-            soroban_auth: None,
             host_imports: None,
             target: None,
             wasm_features: Vec::new(),

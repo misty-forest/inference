@@ -2405,7 +2405,6 @@ dependencies = [
  "predicates",
  "stellar-xdr",
  "walkdir",
- "wasmparser 0.254.0",
  "wasmprinter",
  "wat",
 ]
@@ -2622,7 +2621,9 @@ dependencies = [
  "inference-hassert",
  "inference-wasm-codegen",
  "rustc-hash",
+ "stellar-xdr",
  "thiserror 2.0.20",
+ "wasmparser 0.254.0",
  "wat",
 ]
 

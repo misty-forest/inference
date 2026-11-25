@@ -235,6 +235,10 @@ pub fn codegen_with_proven_in_bounds<S: BuildHasher>(
     options: CodegenOptions,
     proven_in_bounds: &HashSet<ExprId, S>,
 ) -> anyhow::Result<CodegenOutput> {
+    anyhow::ensure!(
+        typed_context.arena().auth_requirements.is_empty(),
+        "requires auth must be compiled against a Wasm proof subject"
+    );
     let CodegenOptions {
         target,
         mode,

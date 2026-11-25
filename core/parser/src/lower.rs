@@ -253,6 +253,7 @@ impl<'s> Lowering<'s> {
                 child.kind,
                 SyntaxKind::Identifier
                     | SyntaxKind::Visibility
+                    | SyntaxKind::AuthRequirement
                     | SyntaxKind::TypeDefinitionStatement
             )
         }) {
@@ -260,6 +261,18 @@ impl<'s> Lowering<'s> {
             defs.push(def_id);
         }
 
+        for clause in node.children_of(SyntaxKind::AuthRequirement) {
+            let mut names = clause.children_of(SyntaxKind::Identifier);
+            let export = self.lower_name_or_error(names.next(), clause);
+            let parameter = self.lower_name_or_error(names.next(), clause);
+            self.arena
+                .auth_requirements
+                .push(inference_ast::arena::AuthRequirement {
+                    spec: name,
+                    export,
+                    parameter,
+                });
+        }
         self.arena.defs.alloc(DefData {
             location,
             kind: Def::Spec {

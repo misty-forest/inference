@@ -681,30 +681,35 @@ See the main project [CONTRIBUTING.md](../../CONTRIBUTING.md) guide.
 
 This crate is part of the Inference compiler project. See the repository root for license information.
 
-### Apply a specification to an existing Wasm export
+### Specify authorization on a compiled Soroban contract
 
-In a proof build, `--proof-subject NAME` resolves applications of a bound
-external declaration by the module's export table. The Rocq file contains the
-supplied executable, its imports and the sidecar's universal obligations.
-`infc` checks the declared ABI signature during external resolution. Naming a
-host import in the executable supplies no semantics for that import.
-
-```sh
-infc spec.inf --mode proof --proof-subject locker --wasm-dep locker=locker.wasm
+```rust
+spec Locker {
+    create_lock requires auth(owner);
+}
 ```
 
-### Certify a direct Soroban authorization guard
-
 ```sh
-infc locker.wasm --soroban-auth create_lock:owner --out-dir out
-coqc out/OwnerAuth.v
+infc create_lock.inf --mode proof --proof-subject locker.wasm --out-dir out
+coqc out/create_lock.v
 ```
 
-This path needs Coq 8.20 and public WasmCert v2.2.0. The compiler resolves the
-named Address argument from Soroban XDR. Rocq checks a structural theorem
-over the export's translated WasmCert body. Its prefix must reach
-`local.get <original argument>; call <a.0>` before returning, with conditional
-exits in the recognized prefix leading to `unreachable`. The certificate
-also checks the import, the argument slot and their types. Its tactic can
-reject equivalent code shapes it does not recognize. Host authorization
-semantics, reentrant effects, balances and storage require separate theorems.
+The parser records the export and parameter names. The translator looks up
+the Address in Soroban XDR, checks the Wasm export's Val ABI, and emits two
+statements over the unchanged module. The structural certificate checks a
+direct call of `a.0` on the original argument in a supported prefix. Early
+branches around the guard must lead to a trap.
+
+The operational obligation quantifies over all invocations on the public
+WasmCert semantics. A host wrapper removes exactly successful applications
+of the bound auth handle to that address in this guest invocation. Every
+other host operation keeps its original behavior. The open goal states
+that no reduction under this wrapper can return values from the export.
+Coq checks the host wrapper and the statement; `Abort` keeps the open goal
+out of the theorem environment. `infc` reports it as OPEN. Closing the
+structural certificate does not close the operational obligation.
+
+A sidecar may also contain native universal value specifications. Bind their
+external declarations with `use { ... } from locker;`. `--proof-subject`
+accepts a Wasm path or a logical name bound by `--wasm-dep NAME=PATH`.
+Native value obligations retain the upstream `ValidSpec` representation.

@@ -213,12 +213,13 @@ pub fn translate_proof_subject(
     subject: &str,
     bytes: &[u8],
     specs: &HSpecMap,
+    auth: &[(String, String)],
 ) -> anyhow::Result<String> {
     validate_rocq_identifier(mod_name)?;
     validate_module_name_available(mod_name)?;
     anyhow::ensure!(
-        !specs.is_empty(),
-        "a proof subject requires a universal specification"
+        !specs.is_empty() || !auth.is_empty(),
+        "a proof subject requires at least one specification clause"
     );
     let mut indices = FxHashMap::default();
     for (name, entries) in specs {
@@ -233,19 +234,10 @@ pub fn translate_proof_subject(
         // The sidecar's specification functions are not part of the subject binary.
         indices.insert(name.clone(), Vec::new());
     }
-    parse_subject_module(mod_name, subject, bytes, indices, specs)?.translate()
-}
-
-/// Emit only the unchanged executable module, without importing WasmVerifier.
-pub fn translate_subject_module(bytes: &[u8]) -> anyhow::Result<String> {
-    let mut module = parse_subject_module(
-        "contract_subject",
-        "contract",
-        bytes,
-        FxHashMap::default(),
-        &HSpecMap::default(),
-    )?;
-    module.render(true)
+    let mut module = parse_subject_module(mod_name, subject, bytes, indices, specs)?;
+    let mut output = module.render(specs.is_empty())?;
+    crate::soroban_auth::append_requirements(&mut output, mod_name, bytes, auth)?;
+    Ok(output)
 }
 
 fn parse_subject_module<'a>(

@@ -184,7 +184,23 @@ pub(crate) fn spec_definition(p: &mut Parser) {
     types::declared_name(p, NameRole::Spec);
     p.expect(SyntaxKind::LBrace);
     while !p.at(SyntaxKind::RBrace) && !p.at_eof() {
-        if at_definition_start(p) {
+        if p.at(SyntaxKind::Ident) {
+            let clause = p.start();
+            types::identifier(p);
+            for word in ["requires", "auth"] {
+                if p.at(SyntaxKind::Ident) && p.current_text() == word {
+                    p.bump(SyntaxKind::Ident);
+                } else {
+                    p.error(format!("expected `{word}` in an authorization requirement"));
+                    break;
+                }
+            }
+            p.expect(SyntaxKind::LParen);
+            types::identifier(p);
+            p.expect(SyntaxKind::RParen);
+            p.expect(SyntaxKind::Semi);
+            clause.complete(p, SyntaxKind::AuthRequirement);
+        } else if at_definition_start(p) {
             // Defense-in-depth: a `definition` handler that consumes nothing
             // (e.g. a future non-advancing routing) would be retried by this
             // loop until the advance guard panics. Detect the unchanged cursor

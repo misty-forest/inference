@@ -53,24 +53,50 @@ fn soroban_auth_resolves_the_named_address_from_xdr() {
     let section: String = raw.iter().map(|b| format!("\\{b:02x}")).collect();
     let bytes = wat::parse_str(format!(r#"(module (@custom "contractspecv0" "{section}") (import "a" "0" (func (param i64) (result i64))) (func (export "lock") (param i64 i64) (result i64) local.get 1 call 0))"#)).unwrap();
     let dir = TempDir::new().unwrap();
-    let wasm = dir.join("token.wasm");
-    fs::write(&wasm, bytes).unwrap();
-    let run = |request: &str| {
+    let wasm = dir.join("sidecar.wasm");
+    fs::write(&wasm, &bytes).unwrap();
+    let src = dir.join("sidecar.inf");
+    let compile = || {
         Command::new(assert_cmd::cargo::cargo_bin!("infc"))
+            .arg(&src)
+            .args(["--mode", "proof", "--proof-subject"])
             .arg(&wasm)
-            .args(["--soroban-auth", request, "--out-dir"])
+            .arg("--out-dir")
             .arg(dir.path())
             .assert()
     };
-    run("lock:owner").success();
-    let goal = fs::read_to_string(dir.join("OwnerAuth.v")).unwrap();
-    assert!(goal.contains(r#"has_call_guard contract_subject "lock"%string 1%N"#));
+    let run = |clause: &str| {
+        fs::write(&src, format!("spec Locker {{ {clause} }}")).unwrap();
+        compile()
+    };
+    run("lock // address\n requires auth(owner);").success();
+    let goal = fs::read_to_string(dir.join("sidecar.v")).unwrap();
+    assert!(goal.contains(r#"has_call_guard sidecar "lock"%string 1%N"#));
+    assert!(goal.contains(r#"requires_auth sidecar "lock"%string 1%nat"#));
+    assert!(goal.contains("Abort."));
     assert!(!goal.contains("Admitted."));
-    assert!(!goal.contains("WasmVerifier"));
-    run("lock:amount")
+    assert_eq!(fs::read(&wasm).unwrap(), bytes);
+    Command::new(assert_cmd::cargo::cargo_bin!("infc"))
+        .arg(&src)
+        .arg("--out-dir")
+        .arg(dir.join("other"))
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "must be compiled against a Wasm proof subject",
+        ));
+    fs::write(&src, "external fn lock(amount:u64, owner:u64) -> u64; use { lock } from sidecar; spec Both { lock requires auth(owner); fn result(x:u64) forall { assert(lock(x,x) == x); } }").unwrap();
+    compile().success();
+    let mixed = fs::read_to_string(dir.join("sidecar.v")).unwrap();
+    assert!(mixed.contains("ValidSpec"));
+    assert!(mixed.contains("Definition obligation_1"));
+    run("lock requires auth(amount);")
         .failure()
         .stderr(predicates::str::contains("expects an Address"));
-    run("lock:missing")
+    run("lock requires auth(missing);")
         .failure()
         .stderr(predicates::str::contains("parameter not found"));
+    run("lock requires signed(owner);")
+        .failure()
+        .stderr(predicates::str::contains("expected `auth`"));
 }
