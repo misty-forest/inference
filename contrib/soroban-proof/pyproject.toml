@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infs-soroban-proof"
+version = "0.1.0"
+description = "Symbolic verification of stateful Inference properties over a Soroban contract's Wasm"
+requires-python = ">=3.10"
+dependencies = ["z3-solver==4.13.3.0"]
+license = {text = "GPL-3.0"}
+
+[project.scripts]
+infs-soroban-prove = "soroban_proof.prove:cli"
+
+[tool.setuptools]
+packages = ["soroban_proof"]
