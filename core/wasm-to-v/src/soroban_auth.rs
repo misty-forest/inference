@@ -94,6 +94,16 @@ pub(super) fn append_requirements(
     let functions = functions(bytes)?;
     proof.push_str(include_str!("../rocq/CallGuard.v"));
     proof.push_str(include_str!("../rocq/Authorization.v"));
+    proof.push_str(concat!(
+        include_str!("../rocq/AuthEntry.v"),
+        include_str!("../rocq/AuthTraps.v"),
+        include_str!("../rocq/AuthOuter.v"),
+        include_str!("../rocq/AuthStore.v"),
+        include_str!("../rocq/GuardedExecution.v"),
+        include_str!("../rocq/AuthInvocation.v"),
+        include_str!("../rocq/AuthResolve.v"),
+        include_str!("../rocq/AuthSound.v"),
+    ));
     for (i, (export, parameter)) in clauses.iter().enumerate() {
         let slot = address_parameter(&functions, types.as_ref(), export, parameter)
             .with_context(|| format!("resolving {export} requires auth({parameter})"))?;
@@ -105,7 +115,7 @@ pub(super) fn append_requirements(
         )?;
         writeln!(
             proof,
-            "Goal obligation_{n}. (* Open: every successful invocation accepted the original address. *) Abort."
+            "Theorem obligation_{n}_proved : obligation_{n}.\nProof. unfold obligation_{n}. AuthSound.prove_requires_auth. Qed."
         )?;
         writeln!(
             proof,

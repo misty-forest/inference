@@ -700,14 +700,24 @@ statements over the unchanged module. The structural certificate checks a
 direct call of `a.0` on the original argument in a supported prefix. Early
 branches around the guard must lead to a trap.
 
-The operational obligation quantifies over all invocations on the public
-WasmCert semantics. A host wrapper removes exactly successful applications
-of the bound auth handle to that address in this guest invocation. Every
-other host operation keeps its original behavior. The open goal states
-that no reduction under this wrapper can return values from the export.
-Coq checks the host wrapper and the statement; `Abort` keeps the open goal
-out of the theorem environment. `infc` reports it as OPEN. Closing the
-structural certificate does not close the operational obligation.
+The compiler emits a proof of `obligation_1_proved : obligation_1`.
+Run `coqc` to check it. WasmCert resolves the deployed export and the auth
+import, enters the native function with exactly its ABI arguments, and
+tracks the original address through the function frame. A host wrapper
+denies successful applications of that auth import to the original address.
+The theorem proves that under this restriction the export cannot return
+values. The property covers arbitrary inputs, ledger states and host
+behaviors admitted by the model. A call can still trap or diverge.
+
+The public proof tactic currently supports modules with function-only imports,
+a native Soroban export, and a prefix recognized by `CallGuard.v`.
+Unsupported bytecode or an unguarded return causes `coqc` to fail.
+The checker and assumptions can be inspected directly:
+
+```sh
+(cd out && coqchk -silent create_lock)
+(cd out && echo 'Require Import create_lock. Print Assumptions obligation_1_proved.' | coqtop -quiet)
+```
 
 A sidecar may also contain native universal value specifications. Bind their
 external declarations with `use { ... } from locker;`. `--proof-subject`

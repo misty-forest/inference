@@ -2030,7 +2030,7 @@ fn run() {
                 println!("Rocq obligations generated at {}", path.display());
                 for (i, (export, parameter)) in auth.iter().enumerate() {
                     println!(
-                        "OPEN obligation_{}: {export} requires auth({parameter})",
+                        "Generated obligation_{}_proved for {export} requires auth({parameter}); run coqc to check it",
                         i + 1
                     );
                 }

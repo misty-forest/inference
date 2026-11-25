@@ -75,6 +75,15 @@ Definition binds_auth (m : module) (imports : list extern_value)
     exists address ty, nth_error imports i = Some (EV_func address) /\
        lookup_N (s_funcs s) address = Some (FC_func_host ty auth).
 
+(** An exported call supplies exactly the parameters of its resolved closure.
+    Extra operands in a Wasm evaluation context belong to the caller. *)
+Definition entry_arguments (live : store_record) (address : funcaddr)
+    (args : list value) : Prop :=
+  exists callee params results,
+    lookup_N (s_funcs live) address = Some callee /\
+    cl_type callee = Tf params results /\
+    List.length args = List.length params.
+
 Definition no_bypass (m : module) (entry : string) (slot : nat) : Prop :=
   forall before deployed live imports instance_frame init_code auth address
          args owner hs hs' after caller caller' results,
@@ -83,6 +92,7 @@ Definition no_bypass (m : module) (entry : string) (slot : nat) : Prop :=
     binds_auth m imports live auth ->
     In {| exportinst_name := list_byte_of_string entry; exportinst_val := EV_func address |}
        (inst_exports (f_inst instance_frame)) ->
+    entry_arguments live address args ->
     nth_error args slot = Some owner ->
     ~ @reduce_trans hf mem (denying auth owner)
         (hs, live, caller, List.app (v_to_e_list args) [AI_invoke address])

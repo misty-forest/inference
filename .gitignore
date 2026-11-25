@@ -22,6 +22,7 @@ Cargo.lock
 # negation a new stub file is silently skipped by `git add` (the pre-existing
 # stub files were only ever tracked via a historical force-add).
 !/core/wasm-to-v/rocq-stub/**/*.v
+!/core/wasm-to-v/rocq/*.v
 
 # Rocq build outputs. `coqc` writes them next to the source it compiles, so
 # building the vendored stub in place — or checking an emitted `.v` beside a

@@ -26,8 +26,7 @@ fn sidecar_applies_the_export_of_an_unmodified_importing_module() {
     assert!(!dir.join("sidecar.wasm").exists());
 }
 
-#[test]
-fn soroban_auth_resolves_the_named_address_from_xdr() {
+fn auth_subject(local: u32) -> Vec<u8> {
     use stellar_xdr::{
         Limits, ScSpecEntry, ScSpecFunctionInputV0, ScSpecFunctionV0, ScSpecTypeDef, ScSymbol,
         WriteXdr,
@@ -51,7 +50,12 @@ fn soroban_auth_resolves_the_named_address_from_xdr() {
     });
     let raw = entry.to_xdr(Limits::none()).unwrap();
     let section: String = raw.iter().map(|b| format!("\\{b:02x}")).collect();
-    let bytes = wat::parse_str(format!(r#"(module (@custom "contractspecv0" "{section}") (import "a" "0" (func (param i64) (result i64))) (func (export "lock") (param i64 i64) (result i64) local.get 1 call 0))"#)).unwrap();
+    wat::parse_str(format!(r#"(module (@custom "contractspecv0" "{section}") (import "a" "0" (func (param i64) (result i64))) (func (export "lock") (param i64 i64) (result i64) local.get {local} call 0))"#)).unwrap()
+}
+
+#[test]
+fn soroban_auth_resolves_the_named_address_from_xdr() {
+    let bytes = auth_subject(1);
     let dir = TempDir::new().unwrap();
     let wasm = dir.join("sidecar.wasm");
     fs::write(&wasm, &bytes).unwrap();
@@ -73,7 +77,8 @@ fn soroban_auth_resolves_the_named_address_from_xdr() {
     let goal = fs::read_to_string(dir.join("sidecar.v")).unwrap();
     assert!(goal.contains(r#"has_call_guard sidecar "lock"%string 1%N"#));
     assert!(goal.contains(r#"requires_auth sidecar "lock"%string 1%nat"#));
-    assert!(goal.contains("Abort."));
+    assert!(goal.contains("Theorem obligation_1_proved : obligation_1."));
+    assert!(!goal.contains("Abort."));
     assert!(!goal.contains("Admitted."));
     assert_eq!(fs::read(&wasm).unwrap(), bytes);
     Command::new(assert_cmd::cargo::cargo_bin!("infc"))
@@ -99,4 +104,33 @@ fn soroban_auth_resolves_the_named_address_from_xdr() {
     run("lock requires signed(owner);")
         .failure()
         .stderr(predicates::str::contains("expected `auth`"));
+}
+
+#[test]
+#[ignore = "requires coqc and public WasmCert v2.2.0"]
+fn wasmcert_checks_the_original_argument_of_the_host_call() {
+    let dir = TempDir::new().unwrap();
+    let spec = dir.join("sidecar.inf");
+    let wasm = dir.join("contract.wasm");
+    fs::write(&spec, "spec Locker { lock requires auth(owner); }").unwrap();
+    for local in [1, 0] {
+        fs::write(&wasm, auth_subject(local)).unwrap();
+        Command::new(assert_cmd::cargo::cargo_bin!("infc"))
+            .arg(&spec)
+            .args(["--mode", "proof", "--proof-subject"])
+            .arg(&wasm)
+            .arg("--out-dir")
+            .arg(dir.path())
+            .assert()
+            .success();
+        let check = Command::new("coqc")
+            .current_dir(dir.path())
+            .arg("sidecar.v")
+            .assert();
+        if local == 1 {
+            check.success();
+        } else {
+            check.failure().stderr(predicates::str::contains("Error:"));
+        }
+    }
 }
