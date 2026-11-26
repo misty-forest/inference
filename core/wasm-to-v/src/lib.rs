@@ -210,6 +210,7 @@ mod gallina;
 mod hassert_print;
 pub mod rocq_names;
 pub mod translator;
+mod soroban_auth;
 pub mod wasm_parser;
 
 /// Name of the WASM custom section that carries spec-originated function

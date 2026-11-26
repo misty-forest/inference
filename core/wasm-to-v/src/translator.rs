@@ -464,6 +464,8 @@ pub(crate) struct WasmParseData<'a> {
     /// callee by the exact string the emitted module carries for it, so `T_app`
     /// resolution keys on these untouched strings.
     pub(crate) raw_func_names_map: Option<HashMap<u32, String>>,
+    /// Logical module whose exports resolve sidecar applications.
+    pub(crate) proof_subject: Option<String>,
     pub(crate) func_locals_name_map: Option<HashMap<u32, HashMap<u32, String>>>,
 
     pub(crate) start_function: Option<u32>,
@@ -519,6 +521,7 @@ impl WasmParseData<'_> {
         WasmParseData {
             mod_name,
             func_names_map: None,
+            proof_subject: None,
             raw_func_names_map: None,
             func_locals_name_map: None,
             start_function: None,
@@ -580,8 +583,12 @@ impl WasmParseData<'_> {
     /// - Unsupported WASM features (tags, unknown reference types)
     /// - Invalid WASM data (malformed expressions, out-of-bounds indices)
     /// - Unimplemented instruction opcodes
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn translate(&mut self) -> anyhow::Result<String /* WasmModuleParseError*/> {
+        self.render(false)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn render(&mut self, module_only: bool) -> anyhow::Result<String> {
         // Spec names reaching this point have already been validated individually
         // either at the public-API boundary (`wasm_parser::translate_bytes`
         // validates the caller-supplied map) or at the decode boundary
@@ -638,17 +645,15 @@ impl WasmParseData<'_> {
         res.push_str("Require Import String.\n");
         res.push_str("Require Import BinNat.\n");
         res.push_str("Require Import ZArith.\n");
-        res.push_str("From Wasm Require Import bytes numerics datatypes host.\n");
-        // The reachability grammar (`reachability_spec` records and the
-        // `ValidExistsSpec`/`ValidUniqueSpec` predicates) lives in the
-        // wasm-verifier `Exists` module. The import joins the line only when a
-        // reachability obligation exists, so a forall-only module's preamble is
-        // byte-identical to what it was before reachability emission existed
-        // (the same keying discipline as the two data-segment lines below).
-        if self.has_reachability_entries() {
-            res.push_str("From WasmVerifier Require Import Assertions Verifier Exists.\n");
+        if module_only {
+            res.push_str("From Wasm Require Import bytes numerics datatypes.\n");
         } else {
-            res.push_str("From WasmVerifier Require Import Assertions Verifier.\n");
+            res.push_str("From Wasm Require Import bytes numerics datatypes host.\n");
+            if self.has_reachability_entries() {
+                res.push_str("From WasmVerifier Require Import Assertions Verifier Exists.\n");
+            } else {
+                res.push_str("From WasmVerifier Require Import Assertions Verifier.\n");
+            }
         }
         // A data segment's bytes are each written as an application of the
         // `Wasm.bytes` module's `encode`, whose argument carries an explicit
@@ -886,9 +891,10 @@ impl WasmParseData<'_> {
             return Err(first);
         }
 
-        self.emit_spec_definitions(&mut res, &remap, &by_name, &reach_targets)?;
-        self.emit_theorems(&mut res);
-
+        if !module_only {
+            self.emit_spec_definitions(&mut res, &remap, &by_name, &reach_targets)?;
+            self.emit_theorems(&mut res);
+        }
         Ok(res)
     }
 
@@ -910,6 +916,15 @@ impl WasmParseData<'_> {
     /// different indices on the two paths.
     fn invert_raw_func_names(&self) -> HashMap<String, Vec<u32>> {
         let mut by_name: HashMap<String, Vec<u32>> = HashMap::new();
+        if let Some(subject) = &self.proof_subject {
+            for export in &self.exports {
+                if export.kind == inf_wasmparser::ExternalKind::Func {
+                    let name = inference_fn_key::merged_name::root(subject, export.name);
+                    by_name.entry(name).or_default().push(export.index);
+                }
+            }
+            return by_name;
+        }
         if let Some(raw) = &self.raw_func_names_map {
             for (idx, name) in raw {
                 by_name.entry(name.clone()).or_default().push(*idx);

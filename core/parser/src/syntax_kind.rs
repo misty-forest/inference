@@ -200,6 +200,7 @@ pub enum SyntaxKind {
     SourceFile,
     UseDirective,
     SpecDefinition,
+    AuthRequirement,
     FunctionDefinition,
     ExternalFunctionDefinition,
     StructDefinition,

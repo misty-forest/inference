@@ -204,6 +204,64 @@ pub fn translate_bytes(
     }
 }
 
+/// Attach the sidecar's universal obligations to an independent executable module.
+///
+/// Only actual function exports can be named by an obligation. No debug names,
+/// sidecar instructions or embedded proof metadata define what gets verified.
+pub fn translate_proof_subject(
+    mod_name: &str,
+    subject: &str,
+    bytes: &[u8],
+    specs: &HSpecMap,
+    auth: &[(String, String)],
+) -> anyhow::Result<String> {
+    validate_rocq_identifier(mod_name)?;
+    validate_module_name_available(mod_name)?;
+    anyhow::ensure!(
+        !specs.is_empty() || !auth.is_empty(),
+        "a proof subject requires at least one specification clause"
+    );
+    let mut indices = FxHashMap::default();
+    for (name, entries) in specs {
+        validate_rocq_identifier(name)?;
+        anyhow::ensure!(
+            !entries.is_empty()
+                && entries
+                    .iter()
+                    .all(|entry| matches!(entry.kind, inference_hassert::SpecKind::Forall)),
+            "only universal specifications can be attached to a proof subject"
+        );
+        // The sidecar's specification functions are not part of the subject binary.
+        indices.insert(name.clone(), Vec::new());
+    }
+    let mut module = parse_subject_module(mod_name, subject, bytes, indices, specs)?;
+    let mut output = module.render(specs.is_empty())?;
+    crate::soroban_auth::append_requirements(&mut output, mod_name, bytes, auth)?;
+    Ok(output)
+}
+
+fn parse_subject_module<'a>(
+    mod_name: &str,
+    subject: &str,
+    bytes: &'a [u8],
+    indices: FxHashMap<String, Vec<u32>>,
+    specs: &HSpecMap,
+) -> anyhow::Result<WasmParseData<'a>> {
+    inf_wasmparser::validate(bytes)?;
+    for payload in Parser::new(0).parse_all(bytes) {
+        if let CustomSection(section) = payload? {
+            anyhow::ensure!(
+                !matches!(section.name(), "inference.spec_funcs" | "inference.hspecs"),
+                "proof subjects must not carry embedded Inference specs"
+            );
+        }
+    }
+    let mut module = parse(mod_name.to_owned(), bytes, indices, specs.clone())?;
+    module.proof_subject = Some(subject.to_owned());
+    module.mod_name = mod_name.to_owned();
+    Ok(module)
+}
+
 /// Parses WebAssembly bytecode into structured [`WasmParseData`].
 ///
 /// This function makes a single forward pass through the WASM module,

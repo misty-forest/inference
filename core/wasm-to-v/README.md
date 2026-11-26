@@ -680,3 +680,53 @@ See the main project [CONTRIBUTING.md](../../CONTRIBUTING.md) guide.
 ## License
 
 This crate is part of the Inference compiler project. See the repository root for license information.
+
+### Specify authorization on a compiled Soroban contract
+
+```rust
+spec Locker {
+    create_lock requires auth(owner);
+}
+```
+
+```sh
+infc create_lock.inf --mode proof --proof-subject locker.wasm --out-dir out
+coqc out/create_lock.v
+```
+
+The parser records the export and parameter names. The translator looks up
+the Address in Soroban XDR, checks the Wasm export's Val ABI, and emits two
+statements over the unchanged module. The static certificate records where
+the original argument reaches the Soroban auth import. The operational
+theorem uses that certificate for the same export, argument and module.
+
+The compiler emits a proof of `obligation_1_proved : obligation_1`.
+Run `coqc` to check it. WasmCert resolves the deployed export and the auth
+import, enters the native function with exactly its ABI arguments, and
+tracks the original address through the function frame. A host wrapper
+denies successful applications of that auth import to the original address.
+The theorem proves that under this restriction the export cannot return
+values. The property covers arbitrary inputs, ledger states and host
+behaviors admitted by the model. A call can still trap or diverge.
+
+The public proof tactic currently supports modules with function-only imports,
+a native Soroban export, and a prefix recognized by `CallGuard.v`. It can
+also follow a finite chain of internal Wasm calls. Each forwarding body
+pushes locals or numeric constants and finishes with a call to its successor.
+The original address may change argument position at every hop. Proof search
+rejects repeated callees. The last function must have a recognized prefix
+that requires authorization or traps. Tracking the address through linear
+memory or indirect calls is outside this rule. For example, an ABI check can guard a successful
+branch and fall through to `unreachable` on failure.
+Unsupported bytecode or an unguarded return causes `coqc` to fail.
+The checker and assumptions can be inspected directly:
+
+```sh
+(cd out && coqchk -silent create_lock)
+(cd out && echo 'Require Import create_lock. Print Assumptions obligation_1_proved.' | coqtop -quiet)
+```
+
+A sidecar may also contain native universal value specifications. Bind their
+external declarations with `use { ... } from locker;`. `--proof-subject`
+accepts a Wasm path or a logical name bound by `--wasm-dep NAME=PATH`.
+Native value obligations retain the upstream `ValidSpec` representation.

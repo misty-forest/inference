@@ -259,6 +259,11 @@ pub(crate) struct Cli {
     #[clap(long = "wasm-dep", value_name = "NAME=PATH")]
     pub(crate) wasm_deps: Vec<String>,
 
+    /// Apply sidecar specifications to a Wasm file or a bound Wasm dependency.
+    /// Writes Rocq obligations only. Host imports remain in the subject module.
+    #[clap(long, value_name = "FILE_OR_NAME", conflicts_with_all = ["generate_wasm_output", "adopt_external_specs", "host_imports", "wasm_features", "import_memory", "stack_size", "memory_pages", "max_memory_pages", "bounds_checks"])]
+    pub(crate) proof_subject: Option<String>,
+
     /// The host functions this build may bind, as comma-separated
     /// `<module>.<field>` entries; the `=` is required.
     ///

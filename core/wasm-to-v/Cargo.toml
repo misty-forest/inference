@@ -13,7 +13,9 @@ inference-fn-key.workspace = true
 inference-hassert.workspace = true
 inference-wasm-codegen.workspace = true
 rustc-hash.workspace = true
+stellar-xdr = "28"
 thiserror.workspace = true
+wasmparser.workspace = true
 
 [dev-dependencies]
 wat.workspace = true

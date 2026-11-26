@@ -15,6 +15,14 @@ use crate::nodes::{
     BlockData, Def, DefData, ExprData, Ident, Location, SourceFileData, StmtData, TypeData,
 };
 
+/// A method and address parameter named by a `requires auth` clause in a spec.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct AuthRequirement {
+    pub spec: IdentId,
+    pub export: IdentId,
+    pub parameter: IdentId,
+}
+
 /// Central storage for all AST nodes.
 ///
 /// Each node category has its own `Arena<T>`. Typed IDs (`ExprId`, `StmtId`, etc.)
@@ -28,6 +36,7 @@ pub struct AstArena {
     pub types: Arena<TypeData>,
     pub blocks: Arena<BlockData>,
     pub idents: Arena<Ident>,
+    pub auth_requirements: Vec<AuthRequirement>,
 }
 
 // Compile-time assertion: AstArena is Send + Sync.
