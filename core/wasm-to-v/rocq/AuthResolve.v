@@ -82,6 +82,67 @@ Proof.
   rewrite <- F6, <- F5, <- F4, <- F3, <- F2. exact F1.
 Qed.
 
+(** A direct call uses an index in the module's function index space, where
+    only function imports precede the native definitions. *)
+Definition resolve_native (m : module) (callee : N) : option (function_type * module_func) :=
+  let n := N.to_nat callee in
+  let offset := get_import_func_count m in
+  if Nat.leb offset n then
+    match nth_error (mod_funcs m) (n - offset) with
+    | Some body =>
+        option_map (fun ft => (ft, body)) (lookup_N (mod_types m) (modfunc_type body))
+    | None => None
+    end
+  else None.
+
+Lemma typed_import_func_count m c ims :
+  Forall2 (module_import_typing c) (mod_imports m) ims ->
+  List.length (ext_t_funcs ims) = get_import_func_count m.
+Proof.
+  unfold get_import_func_count. generalize (mod_imports m) as imps.
+  intros imps Typed. induction Typed as [|[nm field desc] t is ts T Rest IH]; [reflexivity|].
+  unfold module_import_typing, module_import_desc_typing in T. cbn [imp_desc] in T.
+  destruct desc as [idx|tab|mt|gt].
+  - apply (elimT eqP) in T. destruct (lookup_N (tc_types c) idx); try discriminate.
+    injection T as <-. cbn. now f_equal.
+  - apply (elimT andP) in T as [_ T]. apply (elimT eqP) in T. subst t. exact IH.
+  - apply (elimT andP) in T as [_ T]. apply (elimT eqP) in T. subst t. exact IH.
+  - apply (elimT eqP) in T. subst t. exact IH.
+Qed.
+
+Theorem native_resolved (m : module) (callee : N) (ft : function_type) (body : module_func)
+    before deployed live imports fr init :
+  resolve_native m callee = Some (ft,body) ->
+  @instantiate hf mem base before m imports (deployed,fr,init) ->
+  store_extension deployed live = true ->
+  exists addr, lookup_N (inst_funcs (f_inst fr)) callee = Some addr /\
+    lookup_N (s_funcs live) addr = Some (FC_func_native ft (f_inst fr) body).
+Proof.
+  unfold resolve_native.
+  destruct (Nat.leb (get_import_func_count m) (N.to_nat callee)) eqn:Native; try discriminate.
+  apply Nat.leb_le in Native. set (k := (N.to_nat callee - get_import_func_count m)%nat).
+  destruct (nth_error (mod_funcs m) k) as [mf|] eqn:Body; try discriminate.
+  destruct (lookup_N (mod_types m) (modfunc_type mf)) as [tf|] eqn:FT; try discriminate.
+  intros Static. injection Static as <- <-.
+  intros [ims [its [es [hs [inst [gv [rv [Mt [Vt [Sub [Alloc [G [E [-> _]]]]]]]]]]]]]] Live.
+  cbn [f_inst]. apply module_typed_imports in Mt as [c [_ ImportsC]].
+  assert (Offset : List.length (ext_funcs imports) = get_import_func_count m).
+  { rewrite (proj1 (vt_imps_comp_len Vt)), (proj1 (import_subtyping_comp_len Sub)).
+    exact (typed_import_func_count _ _ _ ImportsC). }
+  destruct (allocation_functions _ _ _ _ _ _ _ Alloc) as [Types [Funcs [_ Store]]].
+  { symmetry. exact (List.Forall2_length G). }
+  { symmetry. exact (List.Forall2_length E). }
+  exists (N.of_nat (List.length (s_funcs before) + k)). split.
+  - unfold lookup_N. rewrite Funcs, nth_error_app2, Offset; try lia.
+    apply iota_N_lookup. apply (introT ssrnat.ltP).
+    apply nth_error_Some. rewrite Body. discriminate.
+  - eapply store_extension_lookup_func; [exact Live|].
+    unfold lookup_N. rewrite Store, Nat2N.id, nth_error_app2; try lia.
+    replace (List.length (s_funcs before) + k - List.length (s_funcs before))%nat with k by lia.
+    rewrite List.nth_error_map, Body. cbn [option_map].
+    unfold gen_func_instance. now rewrite Types, FT.
+Qed.
+
 (** Read the type of every function import in order. This resolver accepts
     modules whose imports all occupy the function index space. *)
 Fixpoint function_signatures types (imps : list module_import) : option (list function_type) :=

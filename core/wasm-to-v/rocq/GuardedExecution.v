@@ -20,7 +20,8 @@ Definition owned (v : value) : bool := eq_op v owner.
 (** [top = true] identifies the owner at the top of the operand stack.
     [branch = true] permits a branch to depth zero. A protected block accepting
     such a branch must have a guarded continuation. The outer function label
-    may instead establish that its body cannot leave through that label. *)
+    may instead establish that its body cannot leave through that label.
+    The fallthrough case forgets the stack top and requires [next false]. *)
 Fixpoint scan_one (e : administrative_instruction) (branch : bool)
     (next : bool -> Prop) (top : bool) {struct e} : Prop :=
   match e_to_v_opt e with
@@ -31,15 +32,17 @@ Fixpoint scan_one (e : administrative_instruction) (branch : bool)
     | AI_basic (BI_local_get i) => next (N.eqb i arg)
     | AI_basic (BI_local_set i) | AI_basic (BI_local_tee i) => i <> arg /\ next false
     | AI_basic (BI_global_get _) | AI_basic (BI_global_set _) |
-      AI_basic (BI_binop _ _) | AI_basic (BI_relop _ _) | AI_basic (BI_load _ _ _) => next false
+      AI_basic (BI_testop _ _) | AI_basic (BI_binop _ _) | AI_basic (BI_relop _ _) |
+      AI_basic (BI_load _ _ _) | AI_basic (BI_store _ _ _) => next false
     | AI_basic (BI_call i) => (top = true /\ i = callee) \/ next false
     | AI_invoke a => (top = true /\ a = addr) \/ next false
     | AI_basic (BI_br i) => branch = true /\ i = 0%N
     | AI_basic (BI_br_if i) => branch = true /\ i = 0%N /\ next false
-    | AI_basic (BI_block _ body) => guarded_prefix arg callee true body /\ next false
+    | AI_basic (BI_block _ body) => (guarded_prefix arg callee true body \/ body = []) /\ next false
+    | AI_basic (BI_if _ yes no) => guarded_prefix arg callee true yes /\ no = [] /\ next false
     | AI_label _ cont body => cont = [] /\
         (List.fold_right (fun i k => scan_one i false k) (fun _ => False) body false \/
-         (List.fold_right (fun i k => scan_one i true k) (fun _ => False) body false /\ next false))
+         (List.fold_right (fun i k => scan_one i true k) (fun _ => True) body false /\ next false))
     | AI_frame _ _ _ => next false
     | _ => False
     end
@@ -69,7 +72,8 @@ Proof.
  - destruct op; simpl in H; try discriminate; cbn [to_e_list scan List.fold_right scan_one e_to_v_opt e_to_vref_opt option_map map];
    try solve [apply IHG; exact M | right; apply IHG; exact M | split; [apply Bool.negb_true_iff in H; apply N.eqb_neq; exact H|apply IHG; exact M]].
  - repeat split; auto.
- - cbn [to_e_list scan List.fold_right scan_one e_to_v_opt e_to_vref_opt option_map map]. split; auto.
+ - cbn [to_e_list scan List.fold_right scan_one e_to_v_opt e_to_vref_opt option_map map]. auto.
+ - cbn [to_e_list scan List.fold_right scan_one e_to_v_opt e_to_vref_opt option_map map]. auto.
 Qed.
 
 Lemma scan_no_values vs b t : ~ scan (v_to_e_list vs) b (fun _ => False) t.
@@ -112,7 +116,7 @@ Proof.
  - apply A. now apply scan_mono.
  - cbn [scan List.fold_right scan_one e_to_v_opt e_to_vref_opt option_map]. intros [C [G|[G K]]].
    + destruct (IH false (fun _ => False) false (fun x => x) G) as [O G']. auto.
-   + destruct (IH true (fun _ => False) false (fun x => x) G) as [O G']. auto.
+   + destruct (IH true (fun _ => True) false (fun x => x) G) as [O G']. auto.
 Qed.
 Definition frame_ok (f : frame) := lookup_N (f_locs f) arg = Some owner /\
                                     lookup_N (inst_funcs (f_inst f)) callee = Some addr.
@@ -137,7 +141,8 @@ Proof.
  intro R. destruct R; intros b k t0 M; normalize_constants; normalize_scan;
  try solve [intuition | intros; eapply lift_unknown; eauto | tauto].
  all: try solve [intros [X [Y K]]; eapply lift_unknown; eauto].
- all: try solve [intros [_ [G|[G _]]]; exfalso; eapply scan_no_values; exact G].
+ all: try solve [intros [_ [G|[_ K0]]];
+   [exfalso; eapply scan_no_values; exact G |eapply lift_unknown; eauto]].
  all: try solve [intros [CE [G|[_ K0]]]; subst es;
    [match goal with E : lfill _ _ = _ |- _ => rewrite <- E in G end; exfalso; eapply scan_br_exits; [apply v_to_e_const|exact G]
     |eapply lift_unknown; eauto]].
@@ -156,8 +161,10 @@ Proof.
  all: try subst ves; try subst cl; normalize_constants; normalize_scan;
  try solve [tauto | intro G; split; [exact F|eapply lift_unknown; eauto]].
  - intros [G T]. split; [exact F|]. split; [reflexivity|right]. split; [|exact T].
-   change (scan (List.app (v_to_e_list stack) (to_e_list es)) true (fun _ => False) false).
-   rewrite scan_app scan_values. apply certified; [exact G|unfold monotone; auto].
+   change (scan (List.app (v_to_e_list stack) (to_e_list es)) true (fun _ => True) false).
+   rewrite scan_app scan_values. destruct G as [G| ->].
+   + apply certified; [exact G|unfold monotone; auto].
+   + exact I.
  - intro G. contradiction.
  - (* Resolve the direct call in the same module instance. *)
    intros [[T E]|G]; split; try exact F.

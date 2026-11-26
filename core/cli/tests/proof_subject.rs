@@ -26,7 +26,7 @@ fn sidecar_applies_the_export_of_an_unmodified_importing_module() {
     assert!(!dir.join("sidecar.wasm").exists());
 }
 
-fn auth_subject(local: u32) -> Vec<u8> {
+fn auth_subject(functions: &str) -> Vec<u8> {
     use stellar_xdr::{
         Limits, ScSpecEntry, ScSpecFunctionInputV0, ScSpecFunctionV0, ScSpecTypeDef, ScSymbol,
         WriteXdr,
@@ -50,12 +50,29 @@ fn auth_subject(local: u32) -> Vec<u8> {
     });
     let raw = entry.to_xdr(Limits::none()).unwrap();
     let section: String = raw.iter().map(|b| format!("\\{b:02x}")).collect();
-    wat::parse_str(format!(r#"(module (@custom "contractspecv0" "{section}") (import "a" "0" (func (param i64) (result i64))) (func (export "lock") (param i64 i64) (result i64) local.get {local} call 0))"#)).unwrap()
+    wat::parse_str(format!(
+        r#"(module (@custom "contractspecv0" "{section}")
+            (import "a" "0" (func $auth (param i64) (result i64)))
+            {functions})"#
+    ))
+    .unwrap()
+}
+
+fn direct(local: u32) -> String {
+    format!(r#"(func (export "lock") (param i64 i64) (result i64) local.get {local} call $auth)"#)
+}
+
+fn forwarding(helper_body: &str) -> String {
+    format!(
+        r#"(func $helper (param i64 i64 i64) (result i64) {helper_body})
+           (func (export "lock") (param i64 i64) (result i64)
+             local.get 1 i64.const 7 local.get 0 call $helper)"#
+    )
 }
 
 #[test]
 fn soroban_auth_resolves_the_named_address_from_xdr() {
-    let bytes = auth_subject(1);
+    let bytes = auth_subject(&direct(1));
     let dir = TempDir::new().unwrap();
     let wasm = dir.join("sidecar.wasm");
     fs::write(&wasm, &bytes).unwrap();
@@ -75,7 +92,7 @@ fn soroban_auth_resolves_the_named_address_from_xdr() {
     };
     run("lock // address\n requires auth(owner);").success();
     let goal = fs::read_to_string(dir.join("sidecar.v")).unwrap();
-    assert!(goal.contains(r#"has_call_guard sidecar "lock"%string 1%N"#));
+    assert!(goal.contains(r#"AuthCertificate.certificate sidecar "lock"%string 1%nat"#));
     assert!(goal.contains(r#"requires_auth sidecar "lock"%string 1%nat"#));
     assert!(goal.contains("Theorem obligation_1_proved : obligation_1."));
     assert!(!goal.contains("Abort."));
@@ -113,8 +130,19 @@ fn wasmcert_checks_the_original_argument_of_the_host_call() {
     let spec = dir.join("sidecar.inf");
     let wasm = dir.join("contract.wasm");
     fs::write(&spec, "spec Locker { lock requires auth(owner); }").unwrap();
-    for local in [1, 0] {
-        fs::write(&wasm, auth_subject(local)).unwrap();
+    for (functions, should_prove) in [
+        (direct(1), true),
+        (direct(0), false),
+        (forwarding("local.get 0 call $auth"), true),
+        (forwarding("local.get 2 call $auth"), false),
+        (forwarding("i64.const 0"), false),
+        // The helper can also return through its other branch.
+        (
+            forwarding("local.get 1 i64.eqz if local.get 0 call $auth return end i64.const 0"),
+            false,
+        ),
+    ] {
+        fs::write(&wasm, auth_subject(&functions)).unwrap();
         Command::new(assert_cmd::cargo::cargo_bin!("infc"))
             .arg(&spec)
             .args(["--mode", "proof", "--proof-subject"])
@@ -127,7 +155,7 @@ fn wasmcert_checks_the_original_argument_of_the_host_call() {
             .current_dir(dir.path())
             .arg("sidecar.v")
             .assert();
-        if local == 1 {
+        if should_prove {
             check.success();
         } else {
             check.failure().stderr(predicates::str::contains("Error:"));

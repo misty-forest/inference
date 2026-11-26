@@ -9,7 +9,8 @@ Definition prefix_instruction (arg : N) (op : basic_instruction) : bool :=
   match op with
   | BI_local_set i | BI_local_tee i => negb (N.eqb i arg)
   | BI_local_get _ | BI_global_get _ | BI_global_set _
-  | BI_const_num _ | BI_binop _ _ | BI_relop _ _ | BI_load _ _ _
+  | BI_const_num _ | BI_testop _ _ | BI_binop _ _ | BI_relop _ _
+  | BI_load _ _ _ | BI_store _ _ _
   | BI_call _ => true
   | _ => false
   end.
@@ -22,7 +23,9 @@ Inductive guarded_prefix (arg callee : N) : bool -> list basic_instruction -> Pr
 | guard_branch_to_trap : forall tail, guarded_prefix arg callee true tail ->
     guarded_prefix arg callee true (BI_br_if 0%N :: tail)
 | guard_block : forall trapped bt body tail, guarded_prefix arg callee true body ->
-    guarded_prefix arg callee trapped (BI_block bt body :: BI_unreachable :: tail).
+    guarded_prefix arg callee trapped (BI_block bt body :: BI_unreachable :: tail)
+| guard_if_then_trap : forall trapped bt body tail, guarded_prefix arg callee true body ->
+    guarded_prefix arg callee trapped (BI_if bt body [] :: BI_unreachable :: tail).
 
 Definition function_imports (m : module) :=
   List.filter (fun i => match imp_desc i with MID_func _ => true | _ => false end) (mod_imports m).
@@ -51,6 +54,7 @@ Ltac prove_prefix :=
   first [apply guard_here
         |apply guard_branch_to_trap; prove_prefix
         |apply guard_block; prove_prefix
+        |apply guard_if_then_trap; prove_prefix
         |apply guard_step; [reflexivity | prove_prefix]].
 
 Local Ltac construct_call_guard :=

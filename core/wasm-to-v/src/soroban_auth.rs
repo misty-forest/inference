@@ -103,6 +103,10 @@ pub(super) fn append_requirements(
         include_str!("../rocq/AuthInvocation.v"),
         include_str!("../rocq/AuthResolve.v"),
         include_str!("../rocq/AuthSound.v"),
+        include_str!("../rocq/AuthForward.v"),
+        include_str!("../rocq/AuthCallContext.v"),
+        include_str!("../rocq/AuthForwardSound.v"),
+        include_str!("../rocq/AuthCertificate.v"),
     ));
     for (i, (export, parameter)) in clauses.iter().enumerate() {
         let slot = address_parameter(&functions, types.as_ref(), export, parameter)
@@ -115,13 +119,12 @@ pub(super) fn append_requirements(
         )?;
         writeln!(
             proof,
-            "Theorem obligation_{n}_proved : obligation_{n}.\nProof. unfold obligation_{n}. AuthSound.prove_requires_auth. Qed."
+            "Theorem guard_{n} : AuthCertificate.certificate {module} \"{export}\"%string {slot}%nat.\nProof. AuthCertificate.prove_certificate. Qed."
         )?;
         writeln!(
             proof,
-            "Theorem guard_{n} : has_call_guard {module} \"{export}\"%string {slot}%N \"a\"%string \"0\"%string."
+            "Theorem obligation_{n}_proved : obligation_{n}.\nProof. exact (AuthCertificate.sound _ _ _ guard_{n}). Qed."
         )?;
-        proof.push_str("Proof. prove_call_guard. Qed.\n");
     }
     Ok(())
 }

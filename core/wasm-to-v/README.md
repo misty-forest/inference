@@ -696,9 +696,9 @@ coqc out/create_lock.v
 
 The parser records the export and parameter names. The translator looks up
 the Address in Soroban XDR, checks the Wasm export's Val ABI, and emits two
-statements over the unchanged module. The structural certificate checks a
-direct call of `a.0` on the original argument in a supported prefix. Early
-branches around the guard must lead to a trap.
+statements over the unchanged module. The static certificate records where
+the original argument reaches the Soroban auth import. The operational
+theorem uses that certificate for the same export, argument and module.
 
 The compiler emits a proof of `obligation_1_proved : obligation_1`.
 Run `coqc` to check it. WasmCert resolves the deployed export and the auth
@@ -710,7 +710,12 @@ values. The property covers arbitrary inputs, ledger states and host
 behaviors admitted by the model. A call can still trap or diverge.
 
 The public proof tactic currently supports modules with function-only imports,
-a native Soroban export, and a prefix recognized by `CallGuard.v`.
+a native Soroban export, and a prefix recognized by `CallGuard.v`. It can
+also follow one internal Wasm call when the export pushes locals or numeric
+constants and finishes by calling the helper. The helper may receive the
+protected argument at a different position. Its own prefix must require
+authorization or trap. For example, an ABI check can guard a successful
+branch and fall through to `unreachable` on failure.
 Unsupported bytecode or an unguarded return causes `coqc` to fail.
 The checker and assumptions can be inspected directly:
 
