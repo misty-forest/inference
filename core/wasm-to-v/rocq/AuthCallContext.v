@@ -27,6 +27,21 @@ Record nonreturning (P : state) : Prop := {
     const_list vs = true -> lfill lh (vs ++ [AI_return_invoke a]) = es -> False
 }.
 
+Lemma nonreturning_no_results (P : state) (valid : nonreturning P)
+    hs s f es hs' s' f' results :
+  P hs s f es ->
+  ~ @reduce_trans hf mem h (hs,s,f,es) (hs',s',f',v_to_e_list results).
+Proof.
+  intros Start Run.
+  set (holds := fun x : @host_state hf mem h * store_record * frame * list administrative_instruction =>
+    let '(h0,s0,f0,code) := x in P h0 s0 f0 code).
+  assert (keep : forall x y, @reduce_trans hf mem h x y -> holds x -> holds y).
+  { intros x y R. induction R as [x y Step|x|x y z A IA B IB]; [|auto|auto].
+    destruct x as [[[h0 s0] f0] src], y as [[[h1 s1] f1] dst].
+    intros Invariant. change (P h1 s1 f1 dst). eapply nr_step; [exact valid|exact Invariant|exact Step]. }
+  eapply nr_values; [exact valid|exact (keep _ _ Run Start)|apply v_to_e_const].
+Qed.
+
 Definition protected (Q : state) : state := fun hs s _ es =>
   code_status es = active_trap \/
   exists n f body, es = [AI_frame n f body] /\ Q hs s f body.
@@ -140,12 +155,9 @@ Ltac labeled_exit field :=
    destruct (singleton_label_context _ _ _ [] _ _ _ Nonempty E)
      as [[Bad _]|[j [sub [Focus _]]]]; [impossible_exit Bad|eapply field; eauto]].
 
-Lemma label_frame_no_results hs s caller n fr arity cont inner hs' s' caller' results :
-  P hs s fr inner ->
-  ~ @reduce_trans hf mem h (hs,s,caller,[AI_frame n fr [AI_label arity cont inner]])
-                            (hs',s',caller',v_to_e_list results).
+Lemma protected_labeled_nonreturning : nonreturning (protected (labeled P)).
 Proof.
-  intro Safe. apply (frame_no_results h (labeled P)).
+  apply protected_nonreturning.
   - intros * [T|[ar [con [body [-> Inside]]]]] Step.
     + left; eapply (proj2 (status_reduce h _ _ _ _ _ _ _ _ Step)); exact T.
     + eapply step_label; eauto.
@@ -154,7 +166,16 @@ Proof.
     + discriminate.
   - labeled_exit nr_return.
   - labeled_exit nr_tail.
-  - right. eauto 8.
+Qed.
+
+Lemma label_frame_no_results hs s caller n fr arity cont inner hs' s' caller' results :
+  P hs s fr inner ->
+  ~ @reduce_trans hf mem h (hs,s,caller,[AI_frame n fr [AI_label arity cont inner]])
+                            (hs',s',caller',v_to_e_list results).
+Proof.
+  intro Safe. apply (nonreturning_no_results _ protected_labeled_nonreturning).
+  right. exists n, fr, [AI_label arity cont inner]. split; [reflexivity|].
+  right. exists arity, cont, inner. auto.
 Qed.
 End Label.
 End Invariants.

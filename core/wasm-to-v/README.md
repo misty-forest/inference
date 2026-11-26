@@ -711,10 +711,12 @@ behaviors admitted by the model. A call can still trap or diverge.
 
 The public proof tactic currently supports modules with function-only imports,
 a native Soroban export, and a prefix recognized by `CallGuard.v`. It can
-also follow one internal Wasm call when the export pushes locals or numeric
-constants and finishes by calling the helper. The helper may receive the
-protected argument at a different position. Its own prefix must require
-authorization or trap. For example, an ABI check can guard a successful
+also follow a finite chain of internal Wasm calls. Each forwarding body
+pushes locals or numeric constants and finishes with a call to its successor.
+The original address may change argument position at every hop. Proof search
+rejects repeated callees. The last function must have a recognized prefix
+that requires authorization or traps. Tracking the address through linear
+memory or indirect calls is outside this rule. For example, an ABI check can guard a successful
 branch and fall through to `unreachable` on failure.
 Unsupported bytecode or an unguarded return causes `coqc` to fail.
 The checker and assumptions can be inspected directly:

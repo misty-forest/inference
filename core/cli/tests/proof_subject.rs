@@ -70,6 +70,15 @@ fn forwarding(helper_body: &str) -> String {
     )
 }
 
+fn chain(middle: &str, leaf: &str) -> String {
+    format!(
+        r#"(func $leaf (param i64 i64) (result i64) {leaf})
+           (func $middle (param i64 i64 i64) (result i64) {middle})
+           (func (export "lock") (param i64 i64) (result i64)
+             local.get 1 i64.const 7 local.get 0 call $middle)"#
+    )
+}
+
 #[test]
 fn soroban_auth_resolves_the_named_address_from_xdr() {
     let bytes = auth_subject(&direct(1));
@@ -136,6 +145,27 @@ fn wasmcert_checks_the_original_argument_of_the_host_call() {
         (forwarding("local.get 0 call $auth"), true),
         (forwarding("local.get 2 call $auth"), false),
         (forwarding("i64.const 0"), false),
+        (
+            chain(
+                "local.get 2 local.get 0 call $leaf",
+                "local.get 1 call $auth",
+            ),
+            true,
+        ),
+        (
+            chain(
+                "local.get 0 local.get 2 call $leaf",
+                "local.get 1 call $auth",
+            ),
+            false,
+        ),
+        (
+            chain(
+                "local.get 0 local.get 1 local.get 2 call $middle",
+                "local.get 1 call $auth",
+            ),
+            false,
+        ),
         // The helper can also return through its other branch.
         (
             forwarding("local.get 1 i64.eqz if local.get 0 call $auth return end i64.const 0"),
@@ -158,7 +188,9 @@ fn wasmcert_checks_the_original_argument_of_the_host_call() {
         if should_prove {
             check.success();
         } else {
-            check.failure().stderr(predicates::str::contains("Error:"));
+            check.failure().stderr(predicates::str::contains(
+                "Cannot certify authorization of the original argument",
+            ));
         }
     }
 }
